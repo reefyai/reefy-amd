@@ -4,7 +4,6 @@
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import tempfile
@@ -70,8 +69,7 @@ def build(source, kernel, kernel_release, toolchain_prefix):
         'make', '-C', str(source),
         f'KERNELVER={kernel_release}',
         f'kernel_build_dir={kernel}',
-        'CONFIG_DRM_SUBALLOC_HELPER=',
-        f'-j{os.cpu_count() or 1}', 'modules',
+        'CONFIG_DRM_SUBALLOC_HELPER=', 'modules',
     ], env=environment, check=True)
 
 

@@ -25,13 +25,14 @@ class ProviderTests(unittest.TestCase):
         self.assertNotIn('amddrm_suballoc_helper', MODULES.MODULES)
 
     def test_build_disables_amd_private_suballocator(self):
-        with mock.patch.object(MODULES.subprocess, 'run') as run, \
-                mock.patch.object(MODULES.os, 'cpu_count', return_value=16):
+        with mock.patch.object(MODULES.subprocess, 'run') as run:
             MODULES.build(
                 Path('/source'), Path('/kernel'), '6.18.40', '/tool/bin/x-')
         command = run.call_args.args[0]
         self.assertIn('CONFIG_DRM_SUBALLOC_HELPER=', command)
-        self.assertIn('-j16', command)
+        # AMD's outer make generates compatibility headers serially. Its
+        # nested kernel build already uses every CPU itself.
+        self.assertFalse(any(value.startswith('-j') for value in command))
 
     def test_squashfs_is_reproducible(self):
         with tempfile.TemporaryDirectory() as temporary, \
