@@ -20,11 +20,5 @@
     "package_url": "https://repo.radeon.com/rocm/apt/7.2.4/pool/main/a/amd-smi-lib/amd-smi-lib_26.2.2.70204-93~24.04_amd64.deb",
     "package_bytes": 2478224,
     "package_sha256": "58eabcfc36b15650a0b76ff508bcb9a4830ffe2cc89c621071a65b5d5234fa46"
-  },
-  "libdrm": {
-    "version": "2.4.125",
-    "source_url": "https://dri.freedesktop.org/libdrm/libdrm-2.4.125.tar.xz",
-    "source_bytes": 485592,
-    "source_sha256": "d4bae92797a50f81a93524762e0410a49cd84cfa0f997795bc0172ac8fb1d96a"
   }
 }

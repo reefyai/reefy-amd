@@ -52,26 +52,8 @@ def extract(package, destination):
     ], check=True)
 
 
-def stage_libdrm(libdrm_root, common):
-    library_dir = common / 'usr/lib/reefy/amd-smi/lib'
-    for stem, soname in (
-            ('libdrm.so.2', 'libdrm.so.2'),
-            ('libdrm_amdgpu.so.1', 'libdrm_amdgpu.so.1')):
-        candidates = sorted(
-            path for path in libdrm_root.rglob(stem + '.*')
-            if path.is_file() and not path.is_symlink())
-        if len(candidates) != 1:
-            raise SystemExit(f'expected one built {stem}, got {candidates}')
-        copy(candidates[0], library_dir / candidates[0].name)
-        (library_dir / soname).symlink_to(candidates[0].name)
-    ids = list(libdrm_root.rglob('amdgpu.ids'))
-    if len(ids) != 1:
-        raise SystemExit('built libdrm has no unique amdgpu.ids')
-    copy(ids[0], common / 'usr/share/libdrm/amdgpu.ids')
-
-
-def stage_common(firmware_package, amd_smi_package, amd_ctk, libdrm_root,
-                 common, temporary):
+def stage_common(firmware_package, amd_smi_package, amd_ctk, common,
+                 temporary):
     verify(
         firmware_package, DRIVER['firmware_bytes'],
         DRIVER['firmware_sha256'], 'AMD firmware package')
@@ -99,7 +81,6 @@ def stage_common(firmware_package, amd_smi_package, amd_ctk, libdrm_root,
     copy(
         firmware / 'usr/share/doc/amdgpu-dkms-firmware/copyright',
         common / 'usr/share/licenses/amdgpu-firmware/copyright')
-    stage_libdrm(libdrm_root, common)
     copy(amd_ctk, common / 'usr/bin/amd-ctk')
     copy(ROOT / 'scripts/amd-smi', common / 'usr/bin/amd-smi')
     copy(ROOT / 'scripts/activate', common / 'usr/lib/reefy/activate')
@@ -136,7 +117,6 @@ def main():
     parser.add_argument('--firmware-package', type=Path, required=True)
     parser.add_argument('--amd-smi-package', type=Path, required=True)
     parser.add_argument('--amd-ctk', type=Path, required=True)
-    parser.add_argument('--libdrm-root', type=Path, required=True)
     parser.add_argument('--modules-dir', type=Path, required=True)
     parser.add_argument('--kernel-release', required=True)
     parser.add_argument('--reefy-build-id', required=True)
@@ -153,8 +133,7 @@ def main():
         shutil.rmtree(kernel, ignore_errors=True)
         stage_common(
             args.firmware_package.resolve(), args.amd_smi_package.resolve(),
-            args.amd_ctk.resolve(), args.libdrm_root.resolve(), common,
-            temporary)
+            args.amd_ctk.resolve(), common, temporary)
         stage_kernel(
             args.modules_dir.resolve(), args.kernel_release, kernel)
         squash(common, args.output / 'common.squashfs')

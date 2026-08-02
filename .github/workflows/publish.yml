@@ -39,7 +39,6 @@ jobs:
           versions = json.load(open('versions.json'))
           print('driver_url=' + versions['amd_gpu_driver']['firmware_url'])
           print('smi_url=' + versions['amd_smi']['package_url'])
-          print('libdrm_url=' + versions['libdrm']['source_url'])
           print('toolkit_commit=' + versions['amd_container_toolkit']['commit'])
           PY
 
@@ -64,7 +63,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            dpkg-dev meson ninja-build python3-pip squashfs-tools
+            dpkg-dev python3-pip squashfs-tools
           curl -fsSL \
             https://github.com/oras-project/oras/releases/download/v1.3.0/oras_1.3.0_linux_amd64.tar.gz \
             | sudo tar -xz -C /usr/local/bin oras
@@ -77,7 +76,6 @@ jobs:
         run: |
           curl -fL --retry 3 -o amdgpu-firmware.deb '${{ steps.versions.outputs.driver_url }}'
           curl -fL --retry 3 -o amd-smi.deb '${{ steps.versions.outputs.smi_url }}'
-          curl -fL --retry 3 -o libdrm.tar.xz '${{ steps.versions.outputs.libdrm_url }}'
           python3 - <<'PY'
           import hashlib
           import json
@@ -89,8 +87,6 @@ jobs:
                versions['amd_gpu_driver']['firmware_sha256']),
               ('amd-smi.deb', versions['amd_smi']['package_bytes'],
                versions['amd_smi']['package_sha256']),
-              ('libdrm.tar.xz', versions['libdrm']['source_bytes'],
-               versions['libdrm']['source_sha256']),
           )
           for name, size, digest in checks:
               path = Path(name)
@@ -106,21 +102,6 @@ jobs:
             -ldflags '-s -w -X main.Version=v1.3.0 -X main.GitCommit=${{ steps.versions.outputs.toolkit_commit }}' \
             -o ../amd-ctk ./cmd/amd-ctk
 
-      - name: Build minimal libdrm runtime for amd-smi
-        run: |
-          tar -xf libdrm.tar.xz
-          libdrm_version=$(python3 -c 'import json; print(json.load(open("versions.json"))["libdrm"]["version"])')
-          meson setup libdrm-build "libdrm-$libdrm_version" \
-            --prefix=/usr --libdir=lib \
-            -Ddefault_library=shared -Damdgpu=enabled \
-            -Dintel=disabled -Dradeon=disabled -Dnouveau=disabled \
-            -Dvmwgfx=disabled -Dfreedreno=disabled -Dtegra=disabled \
-            -Dvc4=disabled -Detnaviv=disabled -Dcairo-tests=disabled \
-            -Dman-pages=disabled -Dvalgrind=disabled -Dtests=false \
-            -Dudev=false
-          meson compile -C libdrm-build
-          DESTDIR="$PWD/libdrm-root" meson install -C libdrm-build
-
       - name: Test provider builders
         run: python3 -m unittest discover -s tests -v
 
@@ -131,7 +112,6 @@ jobs:
             --firmware-package amdgpu-firmware.deb \
             --amd-smi-package amd-smi.deb \
             --amd-ctk amd-ctk \
-            --libdrm-root libdrm-root \
             --modules-dir inputs/modules-root \
             --kernel-release "$KERNEL_RELEASE" \
             --reefy-build-id "$REEFY_BUILD_ID" \
