@@ -78,6 +78,26 @@ jobs:
           curl -fL --retry 3 -o amdgpu-firmware.deb '${{ steps.versions.outputs.driver_url }}'
           curl -fL --retry 3 -o amd-smi.deb '${{ steps.versions.outputs.smi_url }}'
           curl -fL --retry 3 -o libdrm.tar.xz '${{ steps.versions.outputs.libdrm_url }}'
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          versions = json.load(open('versions.json'))
+          checks = (
+              ('amdgpu-firmware.deb', versions['amd_gpu_driver']['firmware_bytes'],
+               versions['amd_gpu_driver']['firmware_sha256']),
+              ('amd-smi.deb', versions['amd_smi']['package_bytes'],
+               versions['amd_smi']['package_sha256']),
+              ('libdrm.tar.xz', versions['libdrm']['source_bytes'],
+               versions['libdrm']['source_sha256']),
+          )
+          for name, size, digest in checks:
+              path = Path(name)
+              assert path.stat().st_size == size, f'{name} size mismatch'
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, (
+                  f'{name} SHA-256 mismatch')
+          PY
 
       - name: Build static AMD Container Toolkit CLI
         working-directory: amd-container-toolkit
