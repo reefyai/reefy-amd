@@ -39,16 +39,29 @@ ln -sfn "$COMMON/usr/share/libdrm/amdgpu.ids" \
 depmod "$KERNEL_RELEASE"
 modprobe amdgpu
 
-# /dev/kfd is the driver-owned compute interface. Let the AMD driver decide
-# whether usable hardware exists instead of maintaining PCI IDs in Reefy OS.
+has_bound_amd_gpu() {
+    for driver in /sys/class/drm/card[0-9]*/device/driver; do
+        [ -L "$driver" ] || continue
+        [ "$(basename "$(readlink -f "$driver")")" = amdgpu ] && return 0
+    done
+    return 1
+}
+
+# /dev/kfd exists once amdgpu is loaded even when no AMD GPU is bound. Let
+# the provider identify its own driver-bound DRM devices without maintaining
+# GPU product IDs in Reefy OS.
 attempt=0
-while [ ! -e /dev/kfd ] && [ "$attempt" -lt 40 ]; do
+while ! has_bound_amd_gpu && [ "$attempt" -lt 40 ]; do
     attempt=$((attempt + 1))
     sleep 0.25
 done
-if [ ! -e /dev/kfd ]; then
+if ! has_bound_amd_gpu; then
     echo "AMD driver found no usable GPUs; activation is a no-op"
     exit 0
+fi
+if [ ! -e /dev/kfd ]; then
+    echo "AMD GPU is bound but /dev/kfd is unavailable" >&2
+    exit 1
 fi
 
 amd-smi list >/dev/null

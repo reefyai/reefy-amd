@@ -65,6 +65,7 @@ class ProviderTests(unittest.TestCase):
         script = (ROOT / 'scripts/activate').read_text()
         self.assertNotIn('/sys/bus/pci', script)
         self.assertIn('modprobe amdgpu', script)
+        self.assertIn('/sys/class/drm/card[0-9]*/device/driver', script)
         self.assertIn('amd-ctk cdi validate --path "$temporary"', script)
         self.assertIn('mv -f "$temporary" /run/cdi/amd.json', script)
         self.assertIn('AMD driver found no usable GPUs', script)
