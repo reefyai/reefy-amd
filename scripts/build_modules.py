@@ -2,6 +2,7 @@
 """Build and sign AMD 31.40 modules for one exact Reefy kernel tree."""
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+MODULE_ROOT = Path('/lib/modules')
 DRIVER = json.loads((ROOT / 'versions.json').read_text())['amd_gpu_driver']
 MODULES = {
     'amdgpu': 'amd/amdgpu/amdgpu.ko',
@@ -53,6 +55,30 @@ def source_root(extracted):
     return candidates[0]
 
 
+@contextlib.contextmanager
+def dkms_kernel_link(kernel, kernel_release):
+    """Expose the exact tree at the path hard-coded by AMD DKMS scripts."""
+    release_dir = MODULE_ROOT / kernel_release
+    link = release_dir / 'build'
+    created = False
+    if link.exists() or link.is_symlink():
+        if link.resolve() != kernel.resolve():
+            raise SystemExit(f'conflicting DKMS kernel build link: {link}')
+    else:
+        release_dir.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(kernel.resolve(), target_is_directory=True)
+        created = True
+    try:
+        yield
+    finally:
+        if created:
+            link.unlink(missing_ok=True)
+            try:
+                release_dir.rmdir()
+            except OSError:
+                pass
+
+
 def build(source, kernel, kernel_release, toolchain_prefix):
     environment = os.environ.copy()
     environment.update({
@@ -66,12 +92,13 @@ def build(source, kernel, kernel_release, toolchain_prefix):
         'OBJDUMP': toolchain_prefix + 'objdump',
         'STRIP': toolchain_prefix + 'strip',
     })
-    subprocess.run([
-        'make', '-C', str(source),
-        f'KERNELVER={kernel_release}',
-        f'kernel_build_dir={kernel}',
-        'CONFIG_DRM_SUBALLOC_HELPER=', 'modules',
-    ], env=environment, check=True)
+    with dkms_kernel_link(kernel, kernel_release):
+        subprocess.run([
+            'make', '-C', str(source),
+            f'KERNELVER={kernel_release}',
+            f'kernel_build_dir={kernel}',
+            'CONFIG_DRM_SUBALLOC_HELPER=', 'modules',
+        ], env=environment, check=True)
 
 
 def stage_and_sign(source, kernel, kernel_release, output):
