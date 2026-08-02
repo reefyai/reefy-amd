@@ -1,0 +1,161 @@
+name: Publish Reefy AMD provider
+
+on:
+  workflow_call:
+    inputs:
+      input_artifact:
+        description: Caller artifact containing modules and exact build metadata
+        required: false
+        default: reefy-amd-inputs
+        type: string
+    outputs:
+      digest:
+        description: Published OCI manifest digest
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: reefyai/reefy-amd
+          ref: main
+
+      - name: Read pinned versions
+        id: versions
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          versions = json.load(open('versions.json'))
+          print('driver_url=' + versions['amd_gpu_driver']['firmware_url'])
+          print('smi_url=' + versions['amd_smi']['package_url'])
+          print('libdrm_url=' + versions['libdrm']['source_url'])
+          print('toolkit_commit=' + versions['amd_container_toolkit']['commit'])
+          PY
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ROCm/container-toolkit
+          ref: ${{ steps.versions.outputs.toolkit_commit }}
+          path: amd-container-toolkit
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache-dependency-path: amd-container-toolkit/go.sum
+
+      - name: Download exact Reefy build inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.input_artifact }}
+          path: inputs
+
+      - name: Install build and registry tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev meson ninja-build python3-pip squashfs-tools
+          curl -fsSL \
+            https://github.com/oras-project/oras/releases/download/v1.3.0/oras_1.3.0_linux_amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin oras
+          curl -fsSL \
+            https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-linux-amd64 \
+            -o /tmp/cosign
+          sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+
+      - name: Download pinned AMD payload inputs
+        run: |
+          curl -fL --retry 3 -o amdgpu-firmware.deb '${{ steps.versions.outputs.driver_url }}'
+          curl -fL --retry 3 -o amd-smi.deb '${{ steps.versions.outputs.smi_url }}'
+          curl -fL --retry 3 -o libdrm.tar.xz '${{ steps.versions.outputs.libdrm_url }}'
+
+      - name: Build static AMD Container Toolkit CLI
+        working-directory: amd-container-toolkit
+        run: |
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags '-s -w -X main.Version=v1.3.0 -X main.GitCommit=${{ steps.versions.outputs.toolkit_commit }}' \
+            -o ../amd-ctk ./cmd/amd-ctk
+
+      - name: Build minimal libdrm runtime for amd-smi
+        run: |
+          tar -xf libdrm.tar.xz
+          libdrm_version=$(python3 -c 'import json; print(json.load(open("versions.json"))["libdrm"]["version"])')
+          meson setup libdrm-build "libdrm-$libdrm_version" \
+            --prefix=/usr --libdir=lib \
+            -Ddefault_library=shared -Damdgpu=enabled \
+            -Dintel=disabled -Dradeon=disabled -Dnouveau=disabled \
+            -Dvmwgfx=disabled -Dfreedreno=disabled -Dtegra=disabled \
+            -Dvc4=disabled -Detnaviv=disabled -Dcairo-tests=disabled \
+            -Dman-pages=disabled -Dvalgrind=disabled -Dtests=false \
+            -Dudev=false
+          meson compile -C libdrm-build
+          DESTDIR="$PWD/libdrm-root" meson install -C libdrm-build
+
+      - name: Test provider builders
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Build immutable payloads
+        run: |
+          . inputs/metadata.env
+          python3 scripts/build_payload.py \
+            --firmware-package amdgpu-firmware.deb \
+            --amd-smi-package amd-smi.deb \
+            --amd-ctk amd-ctk \
+            --libdrm-root libdrm-root \
+            --modules-dir inputs/modules-root \
+            --kernel-release "$KERNEL_RELEASE" \
+            --reefy-build-id "$REEFY_BUILD_ID" \
+            --kernel-abi-digest "sha256:$REEFY_KERNEL_ABI_SHA256" \
+            --output output
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: output
+          format: spdx-json
+          output-file: output/sbom.spdx.json
+
+      - name: Log in to GHCR
+        run: echo '${{ github.token }}' | oras login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+      - name: Push OCI artifact
+        id: push
+        run: |
+          . inputs/metadata.env
+          version=$(python3 -c 'import json; print(json.load(open("versions.json"))["amd_gpu_driver"]["release"])')
+          tag="${version}-reefy-${REEFY_BUILD_ID}"
+          output=$(oras push "ghcr.io/reefyai/reefy-amd:$tag" \
+            --artifact-type application/vnd.reefy.artifact.v1 \
+            --config output/config.json:application/vnd.reefy.artifact.config.v1+json \
+            output/common.squashfs:application/vnd.reefy.squashfs.v1 \
+            output/kernel.squashfs:application/vnd.reefy.squashfs.v1)
+          printf '%s\n' "$output"
+          digest=$(printf '%s\n' "$output" | sed -n 's/^Digest: //p')
+          test -n "$digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          oras attach \
+            --artifact-type application/spdx+json \
+            "ghcr.io/reefyai/reefy-amd@$digest" \
+            output/sbom.spdx.json:application/spdx+json
+
+      - name: Sign published manifest with GitHub OIDC
+        run: cosign sign --yes "ghcr.io/reefyai/reefy-amd@${{ steps.push.outputs.digest }}"
+
+      - name: Attest payload build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            output/config.json
+            output/common.squashfs
+            output/kernel.squashfs
+            output/sbom.spdx.json

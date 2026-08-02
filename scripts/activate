@@ -1,0 +1,62 @@
+#!/bin/sh
+set -eu
+
+IFS=:
+set -- ${REEFY_ARTIFACT_MOUNTS:?}
+unset IFS
+COMMON=${1:?missing common AMD layer}
+KERNEL_LAYER=${2:?missing AMD kernel layer}
+KERNEL_RELEASE=$(uname -r)
+MODULE_SOURCE="$KERNEL_LAYER/lib/modules/$KERNEL_RELEASE/extra/amd"
+FIRMWARE_SOURCE="$COMMON/lib/firmware/amdgpu"
+
+[ -d "$MODULE_SOURCE" ]
+[ -d "$FIRMWARE_SOURCE" ]
+[ -x "$COMMON/usr/bin/amd-ctk" ]
+[ -x "$COMMON/usr/bin/amd-smi" ]
+
+bind_read_only() {
+    source=$1
+    target=$2
+    mkdir -p "$target"
+    if ! mountpoint -q "$target"; then
+        mount --bind "$source" "$target"
+        mount -o remount,bind,ro,nodev,nosuid "$source" "$target"
+    fi
+}
+
+bind_read_only "$MODULE_SOURCE" \
+    "/lib/modules/$KERNEL_RELEASE/extra/amd"
+bind_read_only "$FIRMWARE_SOURCE" /lib/firmware/amdgpu
+
+mkdir -p /usr/bin /usr/share/libdrm /run/cdi
+rm -f /run/cdi/amd.json /run/cdi/amd.tmp.json /etc/cdi/amd.json
+ln -sfn "$COMMON/usr/bin/amd-ctk" /usr/bin/amd-ctk
+ln -sfn "$COMMON/usr/bin/amd-smi" /usr/bin/amd-smi
+ln -sfn "$COMMON/usr/share/libdrm/amdgpu.ids" \
+    /usr/share/libdrm/amdgpu.ids
+
+depmod "$KERNEL_RELEASE"
+modprobe amdgpu
+
+# /dev/kfd is the driver-owned compute interface. Let the AMD driver decide
+# whether usable hardware exists instead of maintaining PCI IDs in Reefy OS.
+attempt=0
+while [ ! -e /dev/kfd ] && [ "$attempt" -lt 40 ]; do
+    attempt=$((attempt + 1))
+    sleep 0.25
+done
+if [ ! -e /dev/kfd ]; then
+    echo "AMD driver found no usable GPUs; activation is a no-op"
+    exit 0
+fi
+
+amd-smi list >/dev/null
+temporary=/run/cdi/amd.tmp.json
+trap 'rm -f "$temporary"' EXIT
+amd-ctk cdi generate --output "$temporary"
+amd-ctk cdi validate --path "$temporary"
+grep -q 'amd.com/gpu' "$temporary"
+mv -f "$temporary" /run/cdi/amd.json
+trap - EXIT
+echo "AMD provider activated and CDI published"
