@@ -84,6 +84,12 @@ class ProviderTests(unittest.TestCase):
         self.assertNotIn('libdrm', workflow)
         self.assertNotIn('amdgpu.ids', activation)
 
+    def test_reusable_workflow_checks_out_its_exact_source(self):
+        workflow = (ROOT / '.github/workflows/publish.yml').read_text()
+        self.assertIn(
+            'repository: ${{ job.workflow_repository }}', workflow)
+        self.assertIn('ref: ${{ job.workflow_sha }}', workflow)
+
 
 if __name__ == '__main__':
     unittest.main()
