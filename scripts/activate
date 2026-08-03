@@ -29,12 +29,10 @@ bind_read_only "$MODULE_SOURCE" \
     "/lib/modules/$KERNEL_RELEASE/extra/amd"
 bind_read_only "$FIRMWARE_SOURCE" /lib/firmware/amdgpu
 
-mkdir -p /usr/bin /usr/share/libdrm /run/cdi
+mkdir -p /usr/bin /run/cdi
 rm -f /run/cdi/amd.json /run/cdi/amd.tmp.json /etc/cdi/amd.json
 ln -sfn "$COMMON/usr/bin/amd-ctk" /usr/bin/amd-ctk
 ln -sfn "$COMMON/usr/bin/amd-smi" /usr/bin/amd-smi
-ln -sfn "$COMMON/usr/share/libdrm/amdgpu.ids" \
-    /usr/share/libdrm/amdgpu.ids
 
 depmod "$KERNEL_RELEASE"
 modprobe amdgpu

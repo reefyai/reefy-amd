@@ -4,6 +4,5 @@ set -eu
 SCRIPT=$(readlink -f "$0")
 ROOT=${SCRIPT%/usr/bin/amd-smi}
 export PYTHONPATH="$ROOT/usr/lib/reefy/amd-smi/python:$ROOT/usr/lib/reefy/amd-smi/cli"
-export LD_LIBRARY_PATH="$ROOT/usr/lib/reefy/amd-smi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec /usr/bin/python3 \
     "$ROOT/usr/lib/reefy/amd-smi/cli/amdsmi_cli.py" "$@"

@@ -10,6 +10,8 @@ published OCI artifact is tied to one exact Reefy kernel build and contains:
 - the provider-owned activation hook.
 
 ROCm, HIP, Mesa, media, and application libraries stay in application images.
+The matching Reefy OS supplies Buildroot's generic libdrm and AMD backend for
+the host `amd-smi` diagnostic.
 The provider is mounted read-only and activated by Reefy OS without a
 long-running driver container.
 

@@ -73,7 +73,22 @@ class ProviderTests(unittest.TestCase):
     def test_only_amd_smi_is_exposed_as_host_monitor(self):
         wrapper = (ROOT / 'scripts/amd-smi').read_text()
         self.assertIn('amdsmi_cli.py', wrapper)
+        self.assertNotIn('LD_LIBRARY_PATH', wrapper)
         self.assertFalse((ROOT / 'scripts/rocm-smi').exists())
+
+    def test_libdrm_is_owned_by_reefy_os(self):
+        versions = (ROOT / 'versions.json').read_text()
+        workflow = (ROOT / '.github/workflows/publish.yml').read_text()
+        activation = (ROOT / 'scripts/activate').read_text()
+        self.assertNotIn('"libdrm"', versions)
+        self.assertNotIn('libdrm', workflow)
+        self.assertNotIn('amdgpu.ids', activation)
+
+    def test_reusable_workflow_checks_out_its_exact_source(self):
+        workflow = (ROOT / '.github/workflows/publish.yml').read_text()
+        self.assertIn(
+            'repository: ${{ job.workflow_repository }}', workflow)
+        self.assertIn('ref: ${{ job.workflow_sha }}', workflow)
 
 
 if __name__ == '__main__':
