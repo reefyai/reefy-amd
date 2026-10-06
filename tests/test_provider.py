@@ -39,6 +39,22 @@ class ProviderTests(unittest.TestCase):
         # nested kernel build already uses every CPU itself.
         self.assertFalse(any(value.startswith('-j') for value in command))
 
+    def test_build_normalizes_temporary_source_paths(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(
+                    MODULES, 'MODULE_ROOT', Path(temporary) / 'modules'), \
+                mock.patch.dict(MODULES.os.environ, {'KCFLAGS': '-Werror'}), \
+                mock.patch.object(MODULES.subprocess, 'run') as run:
+            kernel = Path(temporary) / 'kernel'
+            kernel.mkdir()
+            source = Path(temporary) / 'random-dkms-tree'
+            MODULES.build(source, kernel, '6.18.40', '/tool/bin/x-')
+            flags = run.call_args.kwargs['env']['KCFLAGS']
+            self.assertIn('-Werror', flags)
+            for option in ('-fdebug-prefix-map', '-ffile-prefix-map'):
+                self.assertIn(
+                    f'{option}={source.resolve()}=/usr/src/reefy-amd', flags)
+
     def test_dkms_kernel_link_is_exact_and_temporary(self):
         with tempfile.TemporaryDirectory() as temporary, \
                 mock.patch.object(
