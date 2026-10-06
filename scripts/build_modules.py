@@ -92,6 +92,15 @@ def build(source, kernel, kernel_release, toolchain_prefix):
         'OBJDUMP': toolchain_prefix + 'objdump',
         'STRIP': toolchain_prefix + 'strip',
     })
+    # The unpacked DKMS tree lives in a random temporary directory. Keep
+    # that path out of DWARF, BTF and __FILE__ so equal inputs yield equal
+    # signed module payloads across separate builds.
+    prefix_maps = (
+        f'-fdebug-prefix-map={source.resolve()}=/usr/src/reefy-amd '
+        f'-ffile-prefix-map={source.resolve()}=/usr/src/reefy-amd')
+    environment['KCFLAGS'] = ' '.join(
+        value for value in (environment.get('KCFLAGS', ''), prefix_maps)
+        if value)
     with dkms_kernel_link(kernel, kernel_release):
         subprocess.run([
             'make', '-C', str(source),
