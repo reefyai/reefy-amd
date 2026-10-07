@@ -22,9 +22,9 @@ MODULE_SPEC.loader.exec_module(MODULES)
 class ProviderTests(unittest.TestCase):
     def test_exact_nonconflicting_module_closure(self):
         self.assertEqual(set(MODULES.MODULES), PAYLOAD.EXPECTED_MODULES)
-        self.assertNotIn('amddrm_suballoc_helper', MODULES.MODULES)
+        self.assertIn('amddrm_suballoc_helper', MODULES.MODULES)
 
-    def test_build_disables_amd_private_suballocator(self):
+    def test_build_preserves_stock_amd_suballocator_configuration(self):
         with tempfile.TemporaryDirectory() as temporary, \
                 mock.patch.object(
                     MODULES, 'MODULE_ROOT', Path(temporary) / 'modules'), \
@@ -34,10 +34,49 @@ class ProviderTests(unittest.TestCase):
             MODULES.build(
                 Path('/source'), kernel, '6.18.40', '/tool/bin/x-')
         command = run.call_args.args[0]
-        self.assertIn('CONFIG_DRM_SUBALLOC_HELPER=', command)
+        self.assertFalse(any(
+            value.startswith('CONFIG_DRM_SUBALLOC_HELPER=')
+            for value in command))
         # AMD's outer make generates compatibility headers serially. Its
         # nested kernel build already uses every CPU itself.
         self.assertFalse(any(value.startswith('-j') for value in command))
+
+    def test_private_helper_is_signed_with_exact_kernel_key(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(MODULES.subprocess, 'run') as run:
+            root = Path(temporary)
+            source, kernel, output = root / 'source', root / 'kernel', root / 'output'
+            for name, relative in MODULES.MODULES.items():
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(name.encode())
+            MODULES.stage_and_sign(source, kernel, '6.18.54', output)
+            helper = output / 'lib/modules/6.18.54/extra/amd/amddrm_suballoc_helper.ko'
+            self.assertEqual(helper.read_bytes(), b'amddrm_suballoc_helper')
+            run.assert_any_call([
+                str(kernel / 'scripts/sign-file'), 'sha512',
+                str(kernel / 'certs/signing_key.pem'),
+                str(kernel / 'certs/signing_key.x509'), str(helper),
+            ], check=True)
+            self.assertEqual(run.call_count, len(MODULES.MODULES))
+
+    def test_kernel_payload_requires_and_preserves_private_helper(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'modules/lib/modules/6.18.54/extra/amd'
+            source.mkdir(parents=True)
+            for name in PAYLOAD.EXPECTED_MODULES:
+                (source / (name + '.ko')).write_bytes(name.encode())
+            helper = source / 'amddrm_suballoc_helper.ko'
+            helper.unlink()
+            with self.assertRaisesRegex(SystemExit, 'module closure'):
+                PAYLOAD.stage_kernel(root / 'modules', '6.18.54', root / 'missing')
+            helper.write_bytes(b'synthetic signed helper')
+            PAYLOAD.stage_kernel(root / 'modules', '6.18.54', root / 'payload')
+            staged = root / 'payload/lib/modules/6.18.54/extra/amd'
+            self.assertEqual((staged / helper.name).read_bytes(), helper.read_bytes())
+            self.assertEqual({p.stem for p in staged.glob('*.ko')},
+                             PAYLOAD.EXPECTED_MODULES)
 
     def test_build_normalizes_temporary_source_paths(self):
         with tempfile.TemporaryDirectory() as temporary, \
