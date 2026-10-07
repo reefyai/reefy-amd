@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, large]
     timeout-minutes: 60
     outputs:
       digest: ${{ steps.push.outputs.digest }}
@@ -60,14 +60,16 @@ jobs:
           path: inputs
 
       - name: Install build and registry tools
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            dpkg-dev python3-pip squashfs-tools
-          curl -fsSL \
+          sudo python3 scripts/configure_apt_https.py
+          timeout 300 sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
+          timeout 300 sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 install -y --no-install-recommends \
+            dpkg-dev python3-pip squashfs-tools jq
+          curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 \
             https://github.com/oras-project/oras/releases/download/v1.3.0/oras_1.3.0_linux_amd64.tar.gz \
             | sudo tar -xz -C /usr/local/bin oras
-          curl -fsSL \
+          curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 \
             https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-linux-amd64 \
             -o /tmp/cosign
           sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
