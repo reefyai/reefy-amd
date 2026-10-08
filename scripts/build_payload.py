@@ -17,6 +17,7 @@ AMD_SMI = VERSIONS['amd_smi']
 EXPECTED_MODULES = {
     'amdgpu', 'amdkcl', 'amdxcp', 'amdttm', 'amd-sched',
     'amddrm_ttm_helper', 'amddrm_buddy', 'amddrm_exec',
+    'amddrm_suballoc_helper',
 }
 
 
@@ -96,8 +97,6 @@ def stage_kernel(modules_dir, kernel_release, kernel):
     present = {path.stem for path in modules}
     if present != EXPECTED_MODULES:
         raise SystemExit(f'unexpected AMD module closure: {sorted(present)}')
-    if any(path.name == 'amddrm_suballoc_helper.ko' for path in modules):
-        raise SystemExit('conflicting AMD suballocator helper was staged')
     destination = kernel / 'lib/modules' / kernel_release / 'extra/amd'
     for module in modules:
         copy(module, destination / module.name)

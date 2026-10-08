@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and sign AMD 31.40 modules for one exact Reefy kernel tree."""
+"""Build and sign AMD 31.60 modules for one exact Reefy kernel tree."""
 
 import argparse
 import contextlib
@@ -24,6 +24,7 @@ MODULES = {
     'amddrm_ttm_helper': 'amddrm_ttm_helper.ko',
     'amddrm_buddy': 'amddrm_buddy.ko',
     'amddrm_exec': 'amddrm_exec.ko',
+    'amddrm_suballoc_helper': 'amddrm_suballoc_helper.ko',
 }
 
 
@@ -106,7 +107,7 @@ def build(source, kernel, kernel_release, toolchain_prefix):
             'make', '-C', str(source),
             f'KERNELVER={kernel_release}',
             f'kernel_build_dir={kernel}',
-            'CONFIG_DRM_SUBALLOC_HELPER=', 'modules',
+            'modules',
         ], env=environment, check=True)
 
 
@@ -129,10 +130,6 @@ def stage_and_sign(source, kernel, kernel_release, output):
             str(signing_certificate), str(target),
         ], check=True)
 
-    unexpected = list(source.rglob('amddrm_suballoc_helper.ko'))
-    if unexpected:
-        raise SystemExit(
-            'AMD build produced conflicting amddrm_suballoc_helper.ko')
     staged = {path.stem for path in destination.glob('*.ko')}
     if staged != set(MODULES):
         raise SystemExit(f'unexpected AMD module closure: {sorted(staged)}')
