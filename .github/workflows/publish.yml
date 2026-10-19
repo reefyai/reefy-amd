@@ -21,7 +21,8 @@ permissions:
 
 jobs:
   publish:
-    runs-on: [self-hosted, large]
+    # Publication consumes uploaded inputs, not the persistent Buildroot cache.
+    runs-on: [self-hosted, Linux, X64, big-bird]
     timeout-minutes: 60
     outputs:
       digest: ${{ steps.push.outputs.digest }}
