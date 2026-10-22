@@ -25,6 +25,12 @@ bind_read_only() {
     fi
 }
 
+# Module-tree publication, depmod and modprobe share one host index.
+# Discovery and vendor-specific CDI publication below may overlap other hooks.
+mkdir -p /run/reefy-artifacts/locks
+exec 9>/run/reefy-artifacts/locks/host-module-activation
+flock -x 9
+
 bind_read_only "$MODULE_SOURCE" \
     "/lib/modules/$KERNEL_RELEASE/extra/amd"
 bind_read_only "$FIRMWARE_SOURCE" /lib/firmware/amdgpu
@@ -36,6 +42,9 @@ ln -sfn "$COMMON/usr/bin/amd-smi" /usr/bin/amd-smi
 
 depmod "$KERNEL_RELEASE"
 modprobe amdgpu
+
+flock -u 9
+exec 9>&-
 
 has_bound_amd_gpu() {
     for driver in /sys/class/drm/card[0-9]*/device/driver; do
