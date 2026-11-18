@@ -1,0 +1,18 @@
+name: Registry visibility regressions
+on:
+  pull_request:
+    paths: ['tools/registry_attach.py', 'tests/test_registry_attach.py', 'tests/test_registry_workflow_visibility.py', '.github/workflows/publish.yml', '.github/workflows/registry-visibility.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  focused:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, big-bird]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact-subject retries and refusal cases
+        run: python3 -m unittest discover -s tests -p test_registry_attach.py -v
+      - name: Execute publication with delayed subject visibility
+        run: python3 -m unittest discover -s tests -p test_registry_workflow_visibility.py -v

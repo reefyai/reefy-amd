@@ -146,10 +146,8 @@ jobs:
           digest=$(printf '%s\n' "$output" | sed -n 's/^Digest: //p')
           test -n "$digest"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          oras attach \
-            --artifact-type application/spdx+json \
-            "ghcr.io/reefyai/reefy-amd@$digest" \
-            output/sbom.spdx.json:application/spdx+json
+          python3 tools/registry_attach.py \
+            "ghcr.io/reefyai/reefy-amd@$digest" output/sbom.spdx.json
 
       - name: Sign published manifest with GitHub OIDC
         run: cosign sign --yes "ghcr.io/reefyai/reefy-amd@${{ steps.push.outputs.digest }}"
